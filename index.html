@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>La Bilancia delle Equazioni — Prof. Flavio</title>
+  <meta name="description" content="App interattiva per imparare le equazioni di primo grado attraverso la metafora della bilancia. Strumento didattico inclusivo." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Fredoka:wght@500;600;700&family=Caveat:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: "Quicksand", "Nunito", system-ui, -apple-system, sans-serif;
+      background: #E8ECF1;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow: hidden;
+    }
+    @media (max-width: 900px), (max-height: 600px) {
+      html, body { overflow: auto; height: auto; }
+    }
+    #root {
+      height: 100%;
+    }
+    .app-loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 20% 10%, #F0E6FA 0%, #E8ECF1 40%, #DDE7F0 100%);
+      z-index: 9999;
+      transition: opacity 0.4s ease;
+    }
+    .app-loader.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .app-loader-spinner {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      border: 5px solid #C8B6E2;
+      border-top-color: transparent;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    .app-loader-text {
+      font-family: "Quicksand", system-ui, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      color: #6B7A8F;
+      letter-spacing: 2px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-loader" id="loader">
+    <div class="app-loader-spinner"></div>
+    <div class="app-loader-text">CARICAMENTO IN CORSO…</div>
+  </div>
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react" data-type="module">
+    const { useState, useEffect } = React;
+
+    function BilanciaEquazioni() {
+      const equazioni = [
+        { left: { x: 1, units: 5 }, right: { x: 0, units: 9 }, label: "X + 5 = 9", solution: 4 },
+        { left: { x: 2, units: 3 }, right: { x: 0, units: 11 }, label: "2X + 3 = 11", solution: 4 },
+        { left: { x: 3, units: 0 }, right: { x: 0, units: 12 }, label: "3X = 12", solution: 4 },
+        { left: { x: 2, units: 1 }, right: { x: 0, units: 7 }, label: "2X + 1 = 7", solution: 3 }
+      ];
+
+      const [eqIndex, setEqIndex] = useState(1); // start with 2X + 3 = 11 as in mockup
+      const [leftX, setLeftX] = useState(equazioni[1].left.x);
+      const [leftUnits, setLeftUnits] = useState(equazioni[1].left.units);
+      const [rightX, setRightX] = useState(equazioni[1].right.x);
+      const [rightUnits, setRightUnits] = useState(equazioni[1].right.units);
+      const [steps, setSteps] = useState(0);
+      const [feedback, setFeedback] = useState('TOGLI O DIVIDI PER TROVARE QUANTO VALE X');
+      const [feedbackType, setFeedbackType] = useState('info'); // info | success | warning
+      const [solved, setSolved] = useState(false);
+      const [pulseSide, setPulseSide] = useState(null); // 'left' | 'right' | 'both' | null
+
+      // Tracks the equation as it was when started (used for "RICOMINCIA")
+      const [originalState, setOriginalState] = useState({
+        leftX: equazioni[1].left.x,
+        leftUnits: equazioni[1].left.units,
+        rightX: equazioni[1].right.x,
+        rightUnits: equazioni[1].right.units,
+        label: equazioni[1].label
+      });
+
+      // Manual equation input
+      const [editMode, setEditMode] = useState(false);
+      const [editInput, setEditInput] = useState('');
+      const [editError, setEditError] = useState('');
+
+      // Quantity inputs for operations
+      const [xQty, setXQty] = useState(1);
+      const [unitQty, setUnitQty] = useState(1);
+      const [divQty, setDivQty] = useState(2);
+
+      // Color palette
+      const colors = {
+        bg: '#E8ECF1',
+        bgDark: '#C5CDD8',
+        bgLight: '#FFFFFF',
+        lavender: '#C8B6E2',
+        lavenderDeep: '#A48BC9',
+        mint: '#B8E0D2',
+        mintDeep: '#7FC4A8',
+        babyBlue: '#A8D5E8',
+        babyBlueDeep: '#6FB5D2',
+        softPink: '#F5C2C7',
+        softPinkDeep: '#E89AA1',
+        paleYellow: '#FFF3B0',
+        text: '#3D4A5C',
+        textSoft: '#6B7A8F',
+        success: '#7FC4A8',
+        warning: '#E8A87C'
+      };
+
+      // Neumorphism shadow patterns
+      const raised = `8px 8px 16px ${colors.bgDark}, -8px -8px 16px ${colors.bgLight}`;
+      const raisedSoft = `4px 4px 10px ${colors.bgDark}, -4px -4px 10px ${colors.bgLight}`;
+      const inset = `inset 4px 4px 8px ${colors.bgDark}, inset -4px -4px 8px ${colors.bgLight}`;
+
+      // Format the equation symbolically
+      const formatEquation = () => {
+        const side = (x, u) => {
+          const parts = [];
+          if (x > 0) parts.push(x === 1 ? 'X' : `${x}X`);
+          if (u > 0) parts.push(`${u}`);
+          if (parts.length === 0) return '0';
+          return parts.join(' + ');
+        };
+        return `${side(leftX, leftUnits)} = ${side(rightX, rightUnits)}`;
+      };
+
+      // Check if solved after every state change
+      useEffect(() => {
+        // Solved when one side is exactly "1 X" (no other content) AND the other side has only units (no X's)
+        if (leftX === 1 && leftUnits === 0 && rightX === 0) {
+          setSolved(true);
+          setFeedback(`🎉 BRAVISSIMO! X = ${rightUnits}`);
+          setFeedbackType('success');
+        } else if (rightX === 1 && rightUnits === 0 && leftX === 0) {
+          setSolved(true);
+          setFeedback(`🎉 BRAVISSIMO! X = ${leftUnits}`);
+          setFeedbackType('success');
+        }
+      }, [leftX, leftUnits, rightX, rightUnits]);
+
+      // Operations (always bilateral to preserve equality)
+      const triggerPulse = (side = 'both') => {
+        setPulseSide(side);
+        setTimeout(() => setPulseSide(null), 400);
+      };
+
+      const removeUnit = (qtyArg) => {
+        if (solved) return;
+        const n = Math.max(1, parseInt(qtyArg ?? unitQty) || 1);
+        if (leftUnits >= n && rightUnits >= n) {
+          setLeftUnits(leftUnits - n);
+          setRightUnits(rightUnits - n);
+          setSteps(s => s + 1);
+          setFeedback(`HAI TOLTO ${n} ${n === 1 ? 'PALLINO' : 'PALLINI'} DA OGNI PIATTO ✓`);
+          setFeedbackType('info');
+          triggerPulse('both');
+        } else {
+          setFeedback(`NON CI SONO ABBASTANZA PALLINI (NE SERVONO ${n} SU OGNI PIATTO)`);
+          setFeedbackType('warning');
+        }
+      };
+
+      const addUnit = (qtyArg) => {
+        if (solved) return;
+        const n = Math.max(1, parseInt(qtyArg ?? unitQty) || 1);
+        setLeftUnits(leftUnits + n);
+        setRightUnits(rightUnits + n);
+        setSteps(s => s + 1);
+        setFeedback(`HAI AGGIUNTO ${n} ${n === 1 ? 'PALLINO' : 'PALLINI'} A OGNI PIATTO`);
+        setFeedbackType('info');
+        triggerPulse('both');
+      };
+
+      const removeX = (qtyArg) => {
+        if (solved) return;
+        const n = Math.max(1, parseInt(qtyArg ?? xQty) || 1);
+        if (leftX >= n && rightX >= n) {
+          setLeftX(leftX - n);
+          setRightX(rightX - n);
+          setSteps(s => s + 1);
+          setFeedback(`HAI TOLTO ${n} ${n === 1 ? 'SCATOLA X' : 'SCATOLE X'} DA OGNI PIATTO`);
+          setFeedbackType('info');
+          triggerPulse('both');
+        } else {
+          setFeedback(`SERVONO ALMENO ${n} ${n === 1 ? 'SCATOLA X' : 'SCATOLE X'} SU ENTRAMBI I PIATTI`);
+          setFeedbackType('warning');
+        }
+      };
+
+      const addX = (qtyArg) => {
+        if (solved) return;
+        const n = Math.max(1, parseInt(qtyArg ?? xQty) || 1);
+        setLeftX(leftX + n);
+        setRightX(rightX + n);
+        setSteps(s => s + 1);
+        setFeedback(`HAI AGGIUNTO ${n} ${n === 1 ? 'SCATOLA X' : 'SCATOLE X'} A OGNI PIATTO`);
+        setFeedbackType('info');
+        triggerPulse('both');
+      };
+
+      const divide = (qtyArg) => {
+        if (solved) return;
+        const n = Math.max(2, parseInt(qtyArg ?? divQty) || 2);
+        // Check that all coefficients are cleanly divisible by n
+        const allDivisible =
+          leftX % n === 0 &&
+          leftUnits % n === 0 &&
+          rightX % n === 0 &&
+          rightUnits % n === 0;
+        // At least one side must have content
+        const hasContent = leftX + leftUnits + rightX + rightUnits > 0;
+        if (!hasContent) {
+          setFeedback('NON C\'È NIENTE DA DIVIDERE');
+          setFeedbackType('warning');
+          return;
+        }
+        if (allDivisible) {
+          setLeftX(leftX / n);
+          setLeftUnits(leftUnits / n);
+          setRightX(rightX / n);
+          setRightUnits(rightUnits / n);
+          setSteps(s => s + 1);
+          setFeedback(`HAI DIVISO TUTTO PER ${n} ✓`);
+          setFeedbackType('info');
+          triggerPulse('both');
+        } else {
+          setFeedback(`NON SI PUÒ DIVIDERE PER ${n}: I NUMERI NON SONO TUTTI MULTIPLI DI ${n}`);
+          setFeedbackType('warning');
+        }
+      };
+
+      const showHint = () => {
+        if (solved) return;
+        if (leftUnits > 0 && leftX > 0 && rightUnits > 0) {
+          setFeedback('💡 PROVA A TOGLIERE I PALLINI DAI DUE PIATTI');
+        } else if (leftX > 1 && leftUnits === 0) {
+          setFeedback(`💡 ORA PUOI DIVIDERE! IMPOSTA IL FATTORE ${leftX} E PREMI "DIVIDI"`);
+        } else if (rightX > 1 && rightUnits === 0) {
+          setFeedback(`💡 ORA PUOI DIVIDERE! IMPOSTA IL FATTORE ${rightX} E PREMI "DIVIDI"`);
+        } else {
+          setFeedback('💡 OBIETTIVO: AVERE 1 SOLA SCATOLA X DA UN LATO');
+        }
+        setFeedbackType('info');
+      };
+
+      const reset = () => {
+        setLeftX(originalState.leftX);
+        setLeftUnits(originalState.leftUnits);
+        setRightX(originalState.rightX);
+        setRightUnits(originalState.rightUnits);
+        setSteps(0);
+        setFeedback('TOGLI O DIVIDI PER TROVARE QUANTO VALE X');
+        setFeedbackType('info');
+        setSolved(false);
+      };
+
+      const nextEquation = () => {
+        const next = (eqIndex + 1) % equazioni.length;
+        setEqIndex(next);
+        const eq = equazioni[next];
+        setOriginalState({
+          leftX: eq.left.x,
+          leftUnits: eq.left.units,
+          rightX: eq.right.x,
+          rightUnits: eq.right.units,
+          label: eq.label
+        });
+        setLeftX(eq.left.x);
+        setLeftUnits(eq.left.units);
+        setRightX(eq.right.x);
+        setRightUnits(eq.right.units);
+        setSteps(0);
+        setFeedback('NUOVA SFIDA! TROVA QUANTO VALE X');
+        setFeedbackType('info');
+        setSolved(false);
+      };
+
+      // ---- EQUATION PARSER ----
+      // Accepts: "2x + 3 = 11", "x = 5", "3x + 4 = x + 10", "2X+1=7", etc.
+      const parseEquation = (str) => {
+        if (!str || typeof str !== 'string') return null;
+        const s = str.toLowerCase().replace(/\s+/g, '').replace(/\*/g, '').replace(/·/g, '');
+        const parts = s.split('=');
+        if (parts.length !== 2 || parts[0] === '' || parts[1] === '') return null;
+
+        const parseSide = (text) => {
+          let working = text;
+          if (working[0] !== '+' && working[0] !== '-') working = '+' + working;
+          // Validate the whole string consists only of valid term patterns
+          if (!/^([+-]\d*x?)+$/.test(working)) return null;
+          const re = /([+-])(\d*)(x?)/g;
+          let xCoeff = 0;
+          let constant = 0;
+          let m;
+          while ((m = re.exec(working)) !== null) {
+            if (m[0].length === 0) break;
+            const sign = m[1] === '-' ? -1 : 1;
+            const numStr = m[2];
+            const hasX = m[3] === 'x';
+            if (hasX) {
+              const coeff = numStr === '' ? 1 : parseInt(numStr);
+              xCoeff += sign * coeff;
+            } else {
+              if (numStr === '') continue; // a stray sign with nothing — invalid? treat as 0
+              constant += sign * parseInt(numStr);
+            }
+          }
+          return { x: xCoeff, units: constant };
+        };
+
+        const left = parseSide(parts[0]);
+        const right = parseSide(parts[1]);
+        if (!left || !right) return null;
+        return { left, right };
+      };
+
+      // Build a clean label for display
+      const formatSideLabel = (x, u) => {
+        const parts = [];
+        if (x > 0) parts.push(x === 1 ? 'X' : `${x}X`);
+        if (u > 0) parts.push(`${u}`);
+        if (parts.length === 0) return '0';
+        return parts.join(' + ');
+      };
+
+      // Apply an equation to the board (used by both manual input and random generator)
+      const applyEquation = (lX, lU, rX, rU, feedbackMsg) => {
+        const label = `${formatSideLabel(lX, lU)} = ${formatSideLabel(rX, rU)}`;
+        setOriginalState({ leftX: lX, leftUnits: lU, rightX: rX, rightUnits: rU, label });
+        setLeftX(lX);
+        setLeftUnits(lU);
+        setRightX(rX);
+        setRightUnits(rU);
+        setSteps(0);
+        setSolved(false);
+        setFeedback(feedbackMsg);
+        setFeedbackType('info');
+      };
+
+      const applyManualEquation = () => {
+        const result = parseEquation(editInput);
+        if (!result) {
+          setEditError('FORMATO NON VALIDO. ESEMPIO: 2x + 3 = 11');
+          return;
+        }
+        const { left, right } = result;
+        if (left.x < 0 || left.units < 0 || right.x < 0 || right.units < 0) {
+          setEditError('I COEFFICIENTI DEVONO ESSERE TUTTI POSITIVI O ZERO');
+          return;
+        }
+        if (left.x === 0 && right.x === 0) {
+          setEditError('SERVE ALMENO UNA X NELL\'EQUAZIONE');
+          return;
+        }
+        if (left.x > 10 || right.x > 10 || left.units > 30 || right.units > 30) {
+          setEditError('NUMERI TROPPO GRANDI (MAX 10 SCATOLE X, MAX 30 PALLINI)');
+          return;
+        }
+        applyEquation(left.x, left.units, right.x, right.units, 'NUOVA EQUAZIONE INSERITA! TROVA QUANTO VALE X');
+        setEditMode(false);
+        setEditError('');
+        setEditInput('');
+      };
+
+      const cancelEdit = () => {
+        setEditMode(false);
+        setEditInput('');
+        setEditError('');
+      };
+
+      // ---- RANDOM EQUATION GENERATOR ----
+      // "Build-backward" approach: pick the solution X first, then construct the equation.
+      // This guarantees every generated equation is solvable using only the app's operations:
+      // bilateral subtraction of units/X, and exact division.
+      // Three difficulty patterns:
+      //   Type 0 (40%): X + b = c            → trivial: subtract b from both sides
+      //   Type 1 (35%): aX + b = c           → subtract b, then divide by a (a always divides c-b cleanly by construction)
+      //   Type 2 (25%): aX + b = cX + d      → subtract cX and b, then divide if needed (a > c by construction)
+      const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+
+      const generateRandomEquation = () => {
+        const MAX_TRIES = 80;
+        for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+          const r = Math.random();
+          const type = r < 0.4 ? 0 : r < 0.75 ? 1 : 2;
+          const solution = randInt(1, 9); // X = 1..9, always a positive integer
+
+          let lX, lU, rX, rU;
+
+          if (type === 0) {
+            // X + b = c, where c = solution + b
+            const b = randInt(1, 9);
+            lX = 1;
+            lU = b;
+            rX = 0;
+            rU = solution + b;
+          } else if (type === 1) {
+            // aX + b = c, where c = a*solution + b
+            const a = randInt(2, 4);
+            const b = randInt(0, 7);
+            lX = a;
+            lU = b;
+            rX = 0;
+            rU = a * solution + b;
+          } else {
+            // aX + b = cX + d, where d = (a-c)*solution + b, with a > c
+            const c = randInt(1, 2);
+            const a = c + randInt(1, 2);
+            const b = randInt(0, 4);
+            const d = (a - c) * solution + b;
+            lX = a;
+            lU = b;
+            rX = c;
+            rU = d;
+          }
+
+          // Validate against app limits
+          if (lX > 10 || rX > 10 || lU > 30 || rU > 30) continue;
+          if (lX === 0 && rX === 0) continue;
+
+          // Avoid duplicating the equation currently on the board
+          if (
+            lX === originalState.leftX &&
+            lU === originalState.leftUnits &&
+            rX === originalState.rightX &&
+            rU === originalState.rightUnits
+          ) continue;
+
+          // Sanity check: simulate the app's solving process
+          // After bilateral subtraction we get: (lX - min(lX,rX))X + (lU - min(lU,rU)) = (rX - min(lX,rX))X + (rU - min(lU,rU))
+          // Then exactly one side has only X and the other has only units → divide.
+          const xMin = Math.min(lX, rX);
+          const uMin = Math.min(lU, rU);
+          const reducedLX = lX - xMin;
+          const reducedRX = rX - xMin;
+          const reducedLU = lU - uMin;
+          const reducedRU = rU - uMin;
+          // After reduction, one of the sides should have only X (and possibly equal coeff to divide)
+          const xCoeff = reducedLX > 0 ? reducedLX : reducedRX;
+          const constant = reducedLX > 0 ? reducedRU : reducedLU;
+          const otherX = reducedLX > 0 ? reducedRX : reducedLX;
+          const otherU = reducedLX > 0 ? reducedLU : reducedRU;
+          // Validate it solves cleanly: the side with X must have no units, the other no X, and division is exact
+          if (otherX !== 0 || otherU !== 0) continue;
+          if (xCoeff === 0 || constant % xCoeff !== 0) continue;
+          if (constant / xCoeff !== solution) continue; // sanity: solution matches
+
+          return { lX, lU, rX, rU };
+        }
+        // Fallback (should never trigger): a known-good equation
+        return { lX: 2, lU: 3, rX: 0, rU: 11 };
+      };
+
+      const handleRandomEquation = () => {
+        const eq = generateRandomEquation();
+        applyEquation(eq.lX, eq.lU, eq.rX, eq.rU, '🎲 EQUAZIONE CASUALE! TROVA QUANTO VALE X');
+        if (editMode) {
+          setEditMode(false);
+          setEditInput('');
+          setEditError('');
+        }
+      };
+
+      // Position items on a pan — items stack UPWARD from just above the pan
+      const renderPanItems = (numX, numUnits, panCenterX, panTopY, isLeft) => {
+        const items = [];
+        const itemSize = 32;
+        const spacing = 4;
+        const itemsPerRow = 5;
+        const totalItems = numX + numUnits;
+        let idx = 0;
+
+        // First row sits just above the pan top edge
+        const baseY = panTopY - itemSize - 4;
+
+        // Render X boxes first (lavender)
+        for (let i = 0; i < numX; i++) {
+          const row = Math.floor(idx / itemsPerRow);
+          const col = idx % itemsPerRow;
+          const itemsInThisRow = Math.min(itemsPerRow, totalItems - row * itemsPerRow);
+          const rowWidth = itemsInThisRow * itemSize + (itemsInThisRow - 1) * spacing;
+          const startX = panCenterX - rowWidth / 2;
+          const x = startX + col * (itemSize + spacing);
+          const y = baseY - row * (itemSize + spacing);
+
+          items.push(
+            <g key={`x-${isLeft ? 'l' : 'r'}-${i}`} style={{ transition: 'all 0.3s ease' }}>
+              {/* Glow */}
+              <rect
+                x={x - 2}
+                y={y - 2}
+                width={itemSize + 4}
+                height={itemSize + 4}
+                rx="9"
+                fill={colors.lavender}
+                opacity="0.4"
+              />
+              <rect
+                x={x}
+                y={y}
+                width={itemSize}
+                height={itemSize}
+                rx="7"
+                fill={colors.lavender}
+                stroke={colors.lavenderDeep}
+                strokeWidth="1.5"
+              />
+              {/* Highlight */}
+              <rect
+                x={x + 3}
+                y={y + 3}
+                width={itemSize - 6}
+                height={5}
+                rx="2.5"
+                fill="white"
+                opacity="0.4"
+              />
+              <text
+                x={x + itemSize / 2}
+                y={y + itemSize / 2 + 5}
+                fontSize="17"
+                fontWeight="700"
+                fill="white"
+                textAnchor="middle"
+                style={{ fontFamily: '"Quicksand", system-ui, sans-serif' }}
+              >
+                X
+              </text>
+            </g>
+          );
+          idx++;
+        }
+
+        // Render unit weights (mint circles)
+        for (let i = 0; i < numUnits; i++) {
+          const row = Math.floor(idx / itemsPerRow);
+          const col = idx % itemsPerRow;
+          const itemsInThisRow = Math.min(itemsPerRow, totalItems - row * itemsPerRow);
+          const rowWidth = itemsInThisRow * itemSize + (itemsInThisRow - 1) * spacing;
+          const startX = panCenterX - rowWidth / 2;
+          const cx = startX + col * (itemSize + spacing) + itemSize / 2;
+          const cy = baseY - row * (itemSize + spacing) + itemSize / 2;
+
+          items.push(
+            <g key={`u-${isLeft ? 'l' : 'r'}-${i}`} style={{ transition: 'all 0.3s ease' }}>
+              <circle cx={cx} cy={cy} r={itemSize / 2 + 1} fill={colors.mint} opacity="0.4" />
+              <circle
+                cx={cx}
+                cy={cy}
+                r={itemSize / 2 - 1}
+                fill={colors.mint}
+                stroke={colors.mintDeep}
+                strokeWidth="1.5"
+              />
+              {/* Highlight */}
+              <ellipse cx={cx - 4} cy={cy - 4} rx="5" ry="2.5" fill="white" opacity="0.5" />
+              <text
+                x={cx}
+                y={cy + 4}
+                fontSize="14"
+                fontWeight="700"
+                fill="white"
+                textAnchor="middle"
+                style={{ fontFamily: '"Quicksand", system-ui, sans-serif' }}
+              >
+                1
+              </text>
+            </g>
+          );
+          idx++;
+        }
+
+        return items;
+      };
+
+      // Reusable button
+      // Numeric stepper component — supports clicking ± and typing
+      const Stepper = ({ value, onChange, min, max, color, label }) => {
+        const dec = () => onChange(Math.max(min, value - 1));
+        const inc = () => onChange(Math.min(max, value + 1));
+        return (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: colors.bg,
+              borderRadius: '18px',
+              padding: '5px',
+              boxShadow: inset,
+              gap: '4px'
+            }}
+          >
+            <button
+              onClick={dec}
+              aria-label={`Diminuisci ${label}`}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '12px',
+                border: 'none',
+                background: color,
+                color: 'white',
+                fontSize: '22px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: raisedSoft,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingBottom: '4px',
+                fontFamily: '"Quicksand", system-ui, sans-serif'
+              }}
+            >
+              −
+            </button>
+            <input
+              type="number"
+              value={value}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === '') {
+                  onChange(min);
+                  return;
+                }
+                const v = parseInt(raw);
+                if (!isNaN(v)) onChange(Math.max(min, Math.min(max, v)));
+              }}
+              onFocus={(e) => e.target.select()}
+              min={min}
+              max={max}
+              style={{
+                width: '54px',
+                height: '36px',
+                textAlign: 'center',
+                border: 'none',
+                background: 'transparent',
+                fontSize: '22px',
+                fontWeight: 700,
+                color: colors.text,
+                fontFamily: '"Quicksand", system-ui, sans-serif',
+                outline: 'none',
+                MozAppearance: 'textfield'
+              }}
+            />
+            <button
+              onClick={inc}
+              aria-label={`Aumenta ${label}`}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '12px',
+                border: 'none',
+                background: color,
+                color: 'white',
+                fontSize: '22px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: raisedSoft,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingBottom: '2px',
+                fontFamily: '"Quicksand", system-ui, sans-serif'
+              }}
+            >
+              +
+            </button>
+          </div>
+        );
+      };
+
+      const NeoButton = ({ onClick, color, label, icon, disabled, big }) => (
+        <button
+          onClick={onClick}
+          disabled={disabled}
+          style={{
+            background: color,
+            border: 'none',
+            borderRadius: big ? '24px' : '20px',
+            padding: big ? '18px 24px' : '14px 18px',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            opacity: disabled ? 0.5 : 1,
+            boxShadow: disabled ? 'none' : raised,
+            transition: 'all 0.15s ease',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            minWidth: big ? '180px' : '130px',
+            fontFamily: '"Quicksand", system-ui, sans-serif',
+            fontWeight: 700,
+            fontSize: big ? '16px' : '13px',
+            color: 'white',
+            letterSpacing: '0.5px',
+            textShadow: '0 1px 2px rgba(0,0,0,0.1)'
+          }}
+          onMouseDown={(e) => {
+            if (!disabled) e.currentTarget.style.boxShadow = inset;
+          }}
+          onMouseUp={(e) => {
+            if (!disabled) e.currentTarget.style.boxShadow = raised;
+          }}
+          onMouseLeave={(e) => {
+            if (!disabled) e.currentTarget.style.boxShadow = raised;
+          }}
+        >
+          <span style={{ fontSize: big ? '22px' : '18px' }}>{icon}</span>
+          {label}
+        </button>
+      );
+
+      // The beam tilt should always be 0 since operations are bilateral
+      const tilt = 0;
+      // Pan top y-coordinate (where items rest)
+      const leftPanTopY = 270;
+      const rightPanTopY = 270;
+
+      return (
+        <div
+          className="app-root"
+          style={{
+            background: `radial-gradient(circle at 20% 10%, #F0E6FA 0%, ${colors.bg} 40%, #DDE7F0 100%)`,
+            height: '100vh',
+            width: '100vw',
+            padding: '10px',
+            fontFamily: '"Quicksand", "Nunito", system-ui, sans-serif',
+            color: colors.text,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            overflow: 'hidden',
+            boxSizing: 'border-box'
+          }}
+        >
+          <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Fredoka:wght@500;600;700&family=Caveat:wght@500;600;700&display=swap');
+            @keyframes pulse-soft {
+              0%, 100% { transform: scale(1); }
+              50% { transform: scale(1.04); }
+            }
+            @keyframes celebrate {
+              0%, 100% { transform: scale(1) rotate(0deg); }
+              25% { transform: scale(1.1) rotate(-2deg); }
+              75% { transform: scale(1.1) rotate(2deg); }
+            }
+            .pulse-anim { animation: pulse-soft 0.4s ease; }
+            .celebrate-anim { animation: celebrate 0.6s ease; }
+            input[type=number]::-webkit-inner-spin-button,
+            input[type=number]::-webkit-outer-spin-button {
+              -webkit-appearance: none;
+              margin: 0;
+            }
+            input[type=number] {
+              -moz-appearance: textfield;
+            }
+            /* On narrower screens, allow vertical scroll as fallback */
+            @media (max-width: 900px), (max-height: 600px) {
+              .app-root {
+                height: auto !important;
+                min-height: 100vh;
+                overflow: auto !important;
+              }
+              .app-main {
+                flex-direction: column !important;
+              }
+            }
+          `}</style>
+
+          {/* HEADER (compact, full width) */}
+          <div
+            style={{
+              background: colors.bg,
+              borderRadius: '20px',
+              padding: '10px 18px',
+              boxShadow: raised,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '12px',
+              flex: '0 0 auto'
+            }}
+          >
+            <div style={{ flex: '1 1 auto', minWidth: '260px' }}>
+              {editMode ? (
+                <div>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      value={editInput}
+                      onChange={(e) => { setEditInput(e.target.value); setEditError(''); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') applyManualEquation();
+                        if (e.key === 'Escape') cancelEdit();
+                      }}
+                      placeholder="ES: 2x + 3 = 11"
+                      autoFocus
+                      style={{
+                        flex: '1 1 200px',
+                        minWidth: '180px',
+                        background: colors.bg,
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '8px 12px',
+                        fontSize: '18px',
+                        fontWeight: 700,
+                        color: colors.text,
+                        fontFamily: '"Quicksand", system-ui, sans-serif',
+                        boxShadow: inset,
+                        outline: 'none',
+                        letterSpacing: '1px'
+                      }}
+                    />
+                    <button
+                      onClick={applyManualEquation}
+                      style={{
+                        background: `linear-gradient(135deg, ${colors.mint}, ${colors.mintDeep})`,
+                        border: 'none', borderRadius: '10px', padding: '8px 14px',
+                        cursor: 'pointer', boxShadow: raisedSoft, color: 'white',
+                        fontSize: '12px', fontWeight: 700, letterSpacing: '1px',
+                        fontFamily: '"Quicksand", system-ui, sans-serif'
+                      }}
+                    >✓ OK</button>
+                    <button
+                      onClick={cancelEdit}
+                      style={{
+                        background: colors.bg, border: 'none', borderRadius: '10px',
+                        padding: '8px 14px', cursor: 'pointer', boxShadow: raisedSoft,
+                        color: colors.textSoft, fontSize: '12px', fontWeight: 700,
+                        letterSpacing: '1px', fontFamily: '"Quicksand", system-ui, sans-serif'
+                      }}
+                    >✕</button>
+                  </div>
+                  {editError && (
+                    <div
+                      style={{
+                        marginTop: '6px', padding: '4px 10px',
+                        background: `linear-gradient(135deg, ${colors.paleYellow}, ${colors.warning})`,
+                        borderRadius: '8px', color: 'white', fontSize: '11px',
+                        fontWeight: 700, letterSpacing: '0.5px',
+                        textShadow: '0 1px 2px rgba(0,0,0,0.15)'
+                      }}
+                    >⚠ {editError}</div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                  <div
+                    className={solved ? 'celebrate-anim' : ''}
+                    style={{
+                      fontFamily: '"Fredoka", "Quicksand", system-ui, sans-serif',
+                      fontSize: 'clamp(22px, 3.2vw, 32px)',
+                      fontWeight: 700,
+                      color: solved ? colors.success : colors.text,
+                      letterSpacing: '2px',
+                      lineHeight: 1
+                    }}
+                  >
+                    {formatEquation()}
+                  </div>
+                  <div style={{ fontSize: '11px', color: colors.textSoft, fontWeight: 600 }}>
+                    DA: <strong style={{ color: colors.text }}>{originalState.label}</strong>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => {
+                        setEditInput(originalState.label.toLowerCase());
+                        setEditMode(true);
+                        setEditError('');
+                      }}
+                      style={{
+                        background: `linear-gradient(135deg, ${colors.lavender}, ${colors.lavenderDeep})`,
+                        border: 'none', borderRadius: '10px', padding: '5px 10px',
+                        cursor: 'pointer', boxShadow: raisedSoft, color: 'white',
+                        fontSize: '10px', fontWeight: 700, letterSpacing: '1px',
+                        fontFamily: '"Quicksand", system-ui, sans-serif'
+                      }}
+                    >✏️ MODIFICA</button>
+                    <button
+                      onClick={handleRandomEquation}
+                      style={{
+                        background: `linear-gradient(135deg, ${colors.softPink}, ${colors.softPinkDeep})`,
+                        border: 'none', borderRadius: '10px', padding: '5px 10px',
+                        cursor: 'pointer', boxShadow: raisedSoft, color: 'white',
+                        fontSize: '10px', fontWeight: 700, letterSpacing: '1px',
+                        fontFamily: '"Quicksand", system-ui, sans-serif'
+                      }}
+                    >🎲 CASUALE</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                background: colors.bg, borderRadius: '12px',
+                padding: '6px 14px', boxShadow: inset, textAlign: 'center',
+                flex: '0 0 auto'
+              }}
+            >
+              <div style={{ fontSize: '9px', color: colors.textSoft, fontWeight: 600, letterSpacing: '1px' }}>MOSSE</div>
+              <div style={{ fontSize: '20px', fontWeight: 700, color: colors.text, lineHeight: 1 }}>{steps}</div>
+            </div>
+          </div>
+
+          {/* MAIN AREA: balance scale + controls (two columns) */}
+          <div
+            className="app-main"
+            style={{
+              flex: '1 1 auto',
+              display: 'flex',
+              gap: '8px',
+              minHeight: 0
+            }}
+          >
+            {/* LEFT: Balance scale */}
+            <div
+              style={{
+                flex: '1 1 55%',
+                background: colors.bg,
+                borderRadius: '20px',
+                padding: '12px',
+                boxShadow: raised,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: 0,
+                minHeight: '320px'
+              }}
+            >
+              <svg
+                viewBox="0 0 800 480"
+                preserveAspectRatio="xMidYMid meet"
+                style={{ width: '100%', height: '100%', maxHeight: '100%', display: 'block' }}
+              >
+                <defs>
+                  <linearGradient id="poleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#D4C5B9" />
+                    <stop offset="50%" stopColor="#E8DBD0" />
+                    <stop offset="100%" stopColor="#C9B8A8" />
+                  </linearGradient>
+                  <linearGradient id="beamGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#EFE3D5" />
+                    <stop offset="100%" stopColor="#D4C5B9" />
+                  </linearGradient>
+                  <linearGradient id="panGradL" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#FAF5EE" />
+                    <stop offset="100%" stopColor="#D9CFC0" />
+                  </linearGradient>
+                  <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor={colors.paleYellow} stopOpacity="0.5" />
+                    <stop offset="100%" stopColor={colors.paleYellow} stopOpacity="0" />
+                  </radialGradient>
+                  <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur in="SourceAlpha" stdDeviation="4" />
+                    <feOffset dx="0" dy="3" result="offsetblur" />
+                    <feComponentTransfer><feFuncA type="linear" slope="0.3" /></feComponentTransfer>
+                    <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+                  </filter>
+                </defs>
+
+                <circle cx="400" cy="240" r="200" fill="url(#bgGlow)" />
+                <circle cx="80" cy="60" r="20" fill={colors.softPink} opacity="0.3" />
+                <circle cx="720" cy="40" r="14" fill={colors.babyBlue} opacity="0.3" />
+                <circle cx="60" cy="400" r="12" fill={colors.lavender} opacity="0.3" />
+                <circle cx="740" cy="420" r="18" fill={colors.mint} opacity="0.3" />
+                <circle cx="40" cy="200" r="8" fill={colors.paleYellow} opacity="0.5" />
+                <circle cx="760" cy="220" r="10" fill={colors.softPink} opacity="0.3" />
+
+                <ellipse cx="400" cy="455" rx="160" ry="14" fill="#B5A99B" opacity="0.4" />
+                <rect x="320" y="425" width="160" height="24" rx="8" fill="url(#poleGrad)" filter="url(#softShadow)" />
+                <rect x="325" y="423" width="150" height="6" rx="3" fill="#F2E8DC" />
+
+                <rect x="392" y="120" width="16" height="305" rx="6" fill="url(#poleGrad)" />
+                <rect x="394" y="122" width="3" height="300" fill="#F2E8DC" opacity="0.7" />
+
+                <circle cx="400" cy="120" r="14" fill="#A89685" />
+                <circle cx="400" cy="120" r="10" fill="#D4C5B9" />
+                <circle cx="397" cy="117" r="4" fill="white" opacity="0.6" />
+
+                <g transform={`rotate(${tilt}, 400, 120)`} style={{ transition: 'transform 0.5s ease' }}>
+                  <rect x="120" y="115" width="560" height="12" rx="6" fill="url(#beamGrad)" filter="url(#softShadow)" />
+                  <rect x="125" y="116" width="550" height="3" rx="1" fill="#F8F0E5" opacity="0.8" />
+                  <circle cx="120" cy="121" r="8" fill="#C9B8A8" />
+                  <circle cx="680" cy="121" r="8" fill="#C9B8A8" />
+                </g>
+
+                <line x1="170" y1="126" x2="170" y2="270" stroke="#9B8B7C" strokeWidth="2" />
+                <line x1="270" y1="126" x2="270" y2="270" stroke="#9B8B7C" strokeWidth="2" />
+
+                <g
+                  className={pulseSide === 'left' || pulseSide === 'both' ? 'pulse-anim' : ''}
+                  style={{ transformOrigin: '220px 290px', transition: 'transform 0.5s ease' }}
+                >
+                  {renderPanItems(leftX, leftUnits, 220, leftPanTopY, true)}
+                  <path
+                    d="M 130 270 L 310 270 Q 310 312, 290 322 L 150 322 Q 130 312, 130 270 Z"
+                    fill="url(#panGradL)" stroke="#B5A99B" strokeWidth="1.5" filter="url(#softShadow)"
+                  />
+                  <ellipse cx="220" cy="272" rx="88" ry="6" fill="#C9B8A8" opacity="0.5" />
+                  <ellipse cx="220" cy="270" rx="85" ry="4" fill="#F8F0E5" />
+                  <text x="220" y="345" fontSize="11" fill={colors.textSoft} textAnchor="middle" fontWeight="600" letterSpacing="1.5">
+                    PIATTO SINISTRO
+                  </text>
+                </g>
+
+                <line x1="530" y1="126" x2="530" y2="270" stroke="#9B8B7C" strokeWidth="2" />
+                <line x1="630" y1="126" x2="630" y2="270" stroke="#9B8B7C" strokeWidth="2" />
+
+                <g
+                  className={pulseSide === 'right' || pulseSide === 'both' ? 'pulse-anim' : ''}
+                  style={{ transformOrigin: '580px 290px', transition: 'transform 0.5s ease' }}
+                >
+                  {renderPanItems(rightX, rightUnits, 580, rightPanTopY, false)}
+                  <path
+                    d="M 490 270 L 670 270 Q 670 312, 650 322 L 510 322 Q 490 312, 490 270 Z"
+                    fill="url(#panGradL)" stroke="#B5A99B" strokeWidth="1.5" filter="url(#softShadow)"
+                  />
+                  <ellipse cx="580" cy="272" rx="88" ry="6" fill="#C9B8A8" opacity="0.5" />
+                  <ellipse cx="580" cy="270" rx="85" ry="4" fill="#F8F0E5" />
+                  <text x="580" y="345" fontSize="11" fill={colors.textSoft} textAnchor="middle" fontWeight="600" letterSpacing="1.5">
+                    PIATTO DESTRO
+                  </text>
+                </g>
+
+                <g transform="translate(400, 380)">
+                  <circle r="24" fill={colors.bg} stroke={colors.mintDeep} strokeWidth="2" opacity="0.95" />
+                  <text y="-1" fontSize="16" fontWeight="700" fill={colors.mintDeep} textAnchor="middle">=</text>
+                  <text y="14" fontSize="9" fontWeight="600" fill={colors.textSoft} textAnchor="middle" letterSpacing="1">UGUALE</text>
+                </g>
+              </svg>
+            </div>
+
+            {/* RIGHT: feedback + controls */}
+            <div
+              style={{
+                flex: '1 1 45%',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                minWidth: 0
+              }}
+            >
+              {/* Feedback bar */}
+              <div
+                style={{
+                  background:
+                    feedbackType === 'success'
+                      ? `linear-gradient(135deg, ${colors.mint}, ${colors.mintDeep})`
+                      : feedbackType === 'warning'
+                      ? `linear-gradient(135deg, ${colors.paleYellow}, ${colors.warning})`
+                      : colors.bg,
+                  borderRadius: '14px',
+                  padding: '10px 14px',
+                  boxShadow: feedbackType === 'info' ? inset : raisedSoft,
+                  textAlign: 'center',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: feedbackType === 'info' ? colors.text : 'white',
+                  letterSpacing: '0.8px',
+                  transition: 'all 0.3s ease',
+                  textShadow: feedbackType !== 'info' ? '0 1px 2px rgba(0,0,0,0.15)' : 'none',
+                  flex: '0 0 auto'
+                }}
+              >
+                {feedback}
+              </div>
+
+              {/* Control panel — flex grow to fill */}
+              <div
+                style={{
+                  background: colors.bg,
+                  borderRadius: '20px',
+                  padding: '12px',
+                  boxShadow: raised,
+                  flex: '1 1 auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  minHeight: 0,
+                  overflow: 'auto'
+                }}
+              >
+                {/* SCATOLE X row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', borderRadius: '14px', background: colors.bg, boxShadow: raisedSoft, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '110px' }}>
+                    <div style={{ width: '26px', height: '26px', borderRadius: '6px', background: `linear-gradient(135deg, ${colors.lavender}, ${colors.lavenderDeep})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '14px', boxShadow: raisedSoft }}>X</div>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: colors.text, letterSpacing: '0.5px' }}>SCATOLE X</div>
+                  </div>
+                  <Stepper value={xQty} onChange={setXQty} min={1} max={10} color={`linear-gradient(135deg, ${colors.lavender}, ${colors.lavenderDeep})`} label="numero di scatole X" />
+                  <NeoButton onClick={() => addX(xQty)} color={`linear-gradient(135deg, ${colors.softPink}, ${colors.softPinkDeep})`} label="AGGIUNGI" icon="➕" disabled={solved} />
+                  <NeoButton onClick={() => removeX(xQty)} color={`linear-gradient(135deg, #F8D4D7, ${colors.softPink})`} label="TOGLI" icon="➖" disabled={solved || leftX < xQty || rightX < xQty} />
+                </div>
+
+                {/* PALLINI row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', borderRadius: '14px', background: colors.bg, boxShadow: raisedSoft, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '110px' }}>
+                    <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: `linear-gradient(135deg, ${colors.mint}, ${colors.mintDeep})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '13px', boxShadow: raisedSoft }}>1</div>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: colors.text, letterSpacing: '0.5px' }}>PALLINI</div>
+                  </div>
+                  <Stepper value={unitQty} onChange={setUnitQty} min={1} max={20} color={`linear-gradient(135deg, ${colors.babyBlue}, ${colors.babyBlueDeep})`} label="numero di pallini" />
+                  <NeoButton onClick={() => addUnit(unitQty)} color={`linear-gradient(135deg, ${colors.babyBlue}, ${colors.babyBlueDeep})`} label="AGGIUNGI" icon="➕" disabled={solved} />
+                  <NeoButton onClick={() => removeUnit(unitQty)} color={`linear-gradient(135deg, #D1E4EE, ${colors.babyBlue})`} label="TOGLI" icon="➖" disabled={solved || leftUnits < unitQty || rightUnits < unitQty} />
+                </div>
+
+                {/* DIVIDI row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', borderRadius: '14px', background: colors.bg, boxShadow: raisedSoft, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '110px' }}>
+                    <div style={{ width: '26px', height: '26px', borderRadius: '6px', background: `linear-gradient(135deg, ${colors.mint}, ${colors.mintDeep})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '15px', boxShadow: raisedSoft }}>÷</div>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: colors.text, letterSpacing: '0.5px' }}>DIVIDI PER</div>
+                  </div>
+                  <Stepper value={divQty} onChange={setDivQty} min={2} max={10} color={`linear-gradient(135deg, ${colors.mint}, ${colors.mintDeep})`} label="fattore di divisione" />
+                  <NeoButton onClick={() => divide(divQty)} color={`linear-gradient(135deg, ${colors.mint}, ${colors.mintDeep})`} label="DIVIDI" icon="✂️" disabled={solved} />
+                </div>
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap', marginTop: 'auto', paddingTop: '4px' }}>
+                  <NeoButton onClick={showHint} color={`linear-gradient(135deg, ${colors.paleYellow}, #F5DC7E)`} label="AIUTO" icon="💡" disabled={solved} />
+                  <NeoButton onClick={reset} color={`linear-gradient(135deg, ${colors.lavender}, ${colors.lavenderDeep})`} label="RICOMINCIA" icon="🔄" />
+                  {solved && (
+                    <NeoButton onClick={nextEquation} color={`linear-gradient(135deg, ${colors.mint}, ${colors.mintDeep})`} label="NUOVA SFIDA" icon="🚀" />
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* FOOTER: legend + signature */}
+          <div
+            style={{
+              background: colors.bg,
+              borderRadius: '14px',
+              padding: '6px 14px',
+              boxShadow: inset,
+              fontSize: '11px',
+              color: colors.textSoft,
+              display: 'flex',
+              gap: '14px',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              flex: '0 0 auto'
+            }}
+          >
+            <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{ width: '18px', height: '18px', borderRadius: '4px', background: colors.lavender, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '11px' }}>X</div>
+                <span style={{ fontWeight: 600 }}>SCATOLA</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: colors.mint, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '10px' }}>1</div>
+                <span style={{ fontWeight: 600 }}>PALLINO</span>
+              </div>
+              <div style={{ fontWeight: 600 }}>
+                🎯 OBIETTIVO: <strong style={{ color: colors.lavenderDeep }}>1 SCATOLA X</strong> DA UN LATO
+              </div>
+            </div>
+
+            {/* Signature */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 12px',
+                background: `linear-gradient(135deg, ${colors.lavender}33, ${colors.softPink}33)`,
+                borderRadius: '20px',
+                boxShadow: raisedSoft
+              }}
+            >
+              <span style={{ fontSize: '14px' }}>📚</span>
+              <span
+                style={{
+                  fontFamily: '"Caveat", "Quicksand", cursive',
+                  fontSize: '20px',
+                  fontWeight: 600,
+                  color: colors.lavenderDeep,
+                  lineHeight: 1
+                }}
+              >
+                Prof. Flavio
+              </span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<BilanciaEquazioni />);
+
+    requestAnimationFrame(() => {
+      const loader = document.getElementById("loader");
+      if (loader) {
+        loader.classList.add("hidden");
+        setTimeout(() => loader.remove(), 500);
+      }
+    });
+  </script>
+
+  <noscript>
+    <div style="padding: 40px; text-align: center; font-family: sans-serif;">
+      <h2>JavaScript non disponibile</h2>
+      <p>Questa app richiede JavaScript attivo nel browser.</p>
+    </div>
+  </noscript>
+  <script>
+    setTimeout(function() {
+      if (typeof React === "undefined" || typeof Babel === "undefined") {
+        var loader = document.getElementById("loader");
+        if (loader) {
+          loader.innerHTML = '<div style="max-width:500px;padding:24px;text-align:center;font-family:Quicksand,sans-serif;">' +
+            '<h2 style="color:#3D4A5C;">⚠️ Impossibile caricare le librerie</h2>' +
+            '<p style="color:#6B7A8F;">Verifica la connessione internet e ricarica la pagina.</p>' +
+            '<p style="color:#6B7A8F;font-size:13px;">L\'app necessita di scaricare React e Babel da CDN al primo avvio.</p>' +
+            '</div>';
+        }
+      }
+    }, 8000);
+  </script>
+</body>
+</html>
